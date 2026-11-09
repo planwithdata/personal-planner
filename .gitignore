@@ -1,0 +1,12 @@
+node_modules/
+.npm-cache/
+dist/
+test-results/
+playwright-report/
+daylight-backup-*.json
+daylight-analytics-*.json
+daylight-project-handoff-*.json
+*.tsbuildinfo
+.DS_Store
+.env*
+!.env.example

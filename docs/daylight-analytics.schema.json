@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Daylight analytics and project handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application", "kind", "schemaVersion", "exportedAt", "timezone", "scope", "projects", "tasks", "timeBlocks", "ideas", "reviews", "activity"],
+  "properties": {
+    "application": { "const": "Daylight" },
+    "kind": { "enum": ["analytics", "project-handoff"] },
+    "schemaVersion": { "const": 1 },
+    "exportedAt": { "$ref": "#/definitions/timestamp" },
+    "timezone": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "through", "projectId", "includePrivateText", "sampleWorkspace"],
+      "properties": {
+        "from": { "$ref": "#/definitions/nullableDate" },
+        "through": { "$ref": "#/definitions/nullableDate" },
+        "projectId": { "$ref": "#/definitions/nullableId" },
+        "includePrivateText": { "type": "boolean" },
+        "sampleWorkspace": { "type": "boolean" }
+      }
+    },
+    "projects": { "type": "array", "items": { "$ref": "#/definitions/project" } },
+    "tasks": { "type": "array", "items": { "$ref": "#/definitions/task" } },
+    "timeBlocks": { "type": "array", "items": { "$ref": "#/definitions/block" } },
+    "ideas": { "type": "array", "items": { "$ref": "#/definitions/idea" } },
+    "reviews": { "type": "array", "items": { "$ref": "#/definitions/review" } },
+    "activity": { "type": "array", "items": { "$ref": "#/definitions/activity" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "project-handoff" } } },
+      "then": { "properties": { "scope": { "properties": { "from": { "type": "null" }, "through": { "type": "null" }, "projectId": { "type": "string" } } } } },
+      "else": { "properties": { "scope": { "properties": { "from": { "$ref": "#/definitions/date" }, "through": { "$ref": "#/definitions/date" } } } } }
+    }
+  ],
+  "definitions": {
+    "id": { "type": "string", "minLength": 1 },
+    "nullableId": { "anyOf": [{ "$ref": "#/definitions/id" }, { "type": "null" }] },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "nullableDate": { "anyOf": [{ "$ref": "#/definitions/date" }, { "type": "null" }] },
+    "dateOrEmpty": { "anyOf": [{ "$ref": "#/definitions/date" }, { "const": "" }, { "type": "null" }] },
+    "timestamp": { "type": "string", "minLength": 1, "description": "ISO 8601 timestamp." },
+    "nullableTimestamp": { "anyOf": [{ "$ref": "#/definitions/timestamp" }, { "type": "null" }] },
+    "nullableMinutes": { "type": ["integer", "null"], "minimum": 0, "maximum": 1440 },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "status"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "name": { "type": "string" },
+        "status": { "enum": ["active", "paused", "done"] },
+        "outcome": { "type": "string" }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "projectId", "ideaId", "title", "status", "workState", "priority", "plannedDate", "dueDate", "estimatedMinutes", "createdAt", "updatedAt", "completedAt", "removedAt", "repeat", "subtasks"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "projectId": { "$ref": "#/definitions/nullableId" },
+        "ideaId": { "$ref": "#/definitions/nullableId" },
+        "title": { "type": "string" },
+        "status": { "enum": ["open", "done"] },
+        "workState": { "enum": ["ready", "waiting", "blocked", "someday"] },
+        "priority": { "enum": ["low", "medium", "high"] },
+        "plannedDate": { "$ref": "#/definitions/nullableDate" },
+        "dueDate": { "$ref": "#/definitions/nullableDate" },
+        "estimatedMinutes": { "$ref": "#/definitions/nullableMinutes" },
+        "createdAt": { "$ref": "#/definitions/timestamp" },
+        "updatedAt": { "$ref": "#/definitions/timestamp" },
+        "completedAt": { "$ref": "#/definitions/nullableTimestamp" },
+        "removedAt": { "$ref": "#/definitions/nullableTimestamp" },
+        "notes": { "type": "string" },
+        "repeat": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["cadence", "seriesId", "occurrenceDate"],
+          "properties": {
+            "cadence": { "enum": ["daily", "weekly"] },
+            "seriesId": { "$ref": "#/definitions/id" },
+            "occurrenceDate": { "$ref": "#/definitions/date" }
+          }
+        },
+        "subtasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "done"],
+            "properties": {
+              "id": { "$ref": "#/definitions/id" },
+              "title": { "type": "string" },
+              "done": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "taskId", "title", "start", "end", "plannedMinutes", "actualMinutes", "removedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "taskId": { "$ref": "#/definitions/nullableId" },
+        "title": { "type": "string" },
+        "start": { "$ref": "#/definitions/timestamp" },
+        "end": { "$ref": "#/definitions/timestamp" },
+        "plannedMinutes": { "type": "integer", "minimum": 0, "maximum": 1440 },
+        "actualMinutes": { "$ref": "#/definitions/nullableMinutes" },
+        "removedAt": { "$ref": "#/definitions/nullableTimestamp" }
+      }
+    },
+    "idea": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "projectId", "title", "context", "options", "decision", "nextSteps", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "projectId": { "$ref": "#/definitions/nullableId" },
+        "title": { "type": "string" },
+        "context": { "type": "string" },
+        "options": { "type": "string" },
+        "decision": { "type": "string" },
+        "nextSteps": { "type": "string" },
+        "updatedAt": { "$ref": "#/definitions/timestamp" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "periodStart", "updatedAt"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "kind": { "enum": ["daily", "weekly"] },
+        "periodStart": { "$ref": "#/definitions/date" },
+        "updatedAt": { "$ref": "#/definitions/timestamp" },
+        "wins": { "type": "string" },
+        "blockers": { "type": "string" },
+        "nextActions": { "type": "string" }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "entityId", "action", "at", "projectId", "plannedDateBefore", "plannedDateAfter"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "entityId": { "$ref": "#/definitions/id" },
+        "action": { "type": "string" },
+        "at": { "$ref": "#/definitions/timestamp" },
+        "projectId": { "$ref": "#/definitions/nullableId" },
+        "plannedDateBefore": { "$ref": "#/definitions/dateOrEmpty" },
+        "plannedDateAfter": { "$ref": "#/definitions/dateOrEmpty" }
+      }
+    }
+  }
+}
