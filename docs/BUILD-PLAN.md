@@ -88,3 +88,7 @@ Phase 1 code is implemented. Production compilation and seven domain tests pass.
 Browser inspection could not run because both browser and desktop inspection runtimes failed to initialize (`failed to write kernel assets`). Therefore rendered-layout, live IndexedDB interaction, download/restore UI, and physical iPhone checks remain unverified. Do not treat automated build checks as a substitute for these checks.
 
 The Phase 5 browser suite now covers the local workflows above in headless Edge.
+
+## Account rollout
+
+Google sign-in and private workspaces extend the original device-only plan. The site can still open a guest planner. Signed-in workspaces sync through Supabase and are scoped to the current account in both the database and the local cache. See [account setup](ACCOUNTS.md) for the required project, Google provider, and deployment configuration.

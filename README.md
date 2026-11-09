@@ -1,6 +1,6 @@
 # Daylight
 
-An iPhone-first personal planner for tasks, projects, ideas, time blocks, and reviews. Daylight saves the workspace in IndexedDB on your device.
+An iPhone-first personal planner for tasks, projects, ideas, time blocks, and reviews. Use it on one device or sign in with Google to keep a private workspace across devices.
 
 ## Run locally
 
@@ -19,9 +19,10 @@ Open the URL printed by Vite. The sample workspace shows how the app works. Use 
 npm test
 npm run build
 npm run test:browser
+npm run test:accounts
 ```
 
-The browser tests use Microsoft Edge on Windows. On other platforms, run `npx playwright install chromium` first. They serve the production build under a repository subpath and use a simulated Google Calendar service.
+The browser tests use Microsoft Edge on Windows. On other platforms, run `npx playwright install chromium` first. The production suite serves the compiled app under a repository subpath. The account suite simulates OAuth and Supabase responses. The database policy test runs the migration against PostgreSQL locally.
 
 Use `npm run preview` to try the production build and its offline behavior. Development and preview run at different origins and have separate workspaces. Export and restore a backup to move data between origins.
 
@@ -29,10 +30,12 @@ Use `npm run preview` to try the production build and its offline behavior. Deve
 
 1. Push the project to your GitHub repository.
 2. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the source.
-3. In **Actions**, run **Deploy Daylight to GitHub Pages**. It builds the site, runs the tests, and publishes `dist/`.
+3. In **Actions**, run **Deploy Daylight to GitHub Pages**. It builds the site, runs the tests, and publishes `dist/`. Later pushes to `main` also run the workflow.
 4. On your iPhone, open the Pages URL in Safari. Tap **Share → Add to Home Screen**, then open Daylight from the icon.
 
-See [Google Calendar setup](docs/GOOGLE-CALENDAR.md) to connect your account. The optional repository variable `DAYLIGHT_GOOGLE_CLIENT_ID` prepopulates the OAuth client ID on the deployed site.
+If Pages serves a blank screen or stays on “Opening your planner,” check the publishing source. Publishing the repository's source branch sends raw TypeScript to the browser. The GitHub Actions workflow publishes the compiled bundle.
+
+See [Google account setup](docs/ACCOUNTS.md) to enable sign-in and private workspaces. The separate [Google Calendar setup](docs/GOOGLE-CALENDAR.md) enables calendar viewing and publishing time blocks.
 
 ## Data and exports
 

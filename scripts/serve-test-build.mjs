@@ -2,12 +2,13 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 
-const root = resolve('dist');
+const root = resolve(process.env.DAYLIGHT_TEST_BUILD ?? 'dist');
+const port = Number(process.env.DAYLIGHT_TEST_PORT ?? 4174);
 const prefix = '/personal-planner/';
 let workerRevision = 0;
 const types = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json'
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.woff2': 'font/woff2'
 };
 createServer(async (request, response) => {
   try {
@@ -32,4 +33,4 @@ createServer(async (request, response) => {
     response.writeHead(404, { 'Content-Type': 'text/plain' });
     response.end('Not found');
   }
-}).listen(4174, '127.0.0.1');
+}).listen(port, '127.0.0.1');

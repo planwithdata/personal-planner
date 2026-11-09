@@ -5,7 +5,8 @@ import {
   taskDraft, uid, validateBackup, workStateLabels, type Activity, type Idea, type Planner, type Project,
   type Review, type Task, type TimeBlock, type View, type WorkState
 } from './domain';
-import { loadPlanner, savePlanner } from './storage';
+import { AccountGate, type AccountControls } from './AccountGate';
+import { CloudWorkspaceConflictError, type WorkspaceStore } from './account-store';
 import { Calendar, newTimeBlock, TimeBlockDialog } from './Calendar';
 import { Reviews } from './Reviews';
 import { Settings } from './Settings';
@@ -13,7 +14,7 @@ import { TaskDialog } from './TaskDialog';
 import { dailyLoad, occursOn } from './schedule';
 import { downloadText, duration, Modal, prettyDate } from './ui';
 import { useGoogleCalendar } from './useGoogleCalendar';
-import { useReleaseStatus } from './useReleaseStatus';
+import type { useReleaseStatus } from './useReleaseStatus';
 import './styles.css';
 import './planning.css';
 
@@ -42,36 +43,68 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.book}</svg>;
 }
-function App() {
+function App({ store, account, release }: {
+  store: WorkspaceStore;
+  account: AccountControls;
+  release: ReturnType<typeof useReleaseStatus>;
+}) {
   const [data,setData] = useState<Planner | null>(null), [loadError,setLoadError] = useState('');
   const [storage, setStorage] = useState('Loading your workspace…');
   const [saveError, setSaveError] = useState('');
+  const [syncError, setSyncError] = useState('');
+  const [syncConflict, setSyncConflict] = useState(false);
+  const [syncRetry, setSyncRetry] = useState(0);
   const [view,setView] = useState<View>('today'), [query,setQuery] = useState(''), [today,setToday] = useState(localDate());
   const [taskEdit, setTaskEditState] = useState<Task | null>(null);
   const [taskError, setTaskError] = useState('');
   const [projectEdit, setProjectEdit] = useState<Project | null>(null);
   const [blockEdit, setBlockEdit] = useState<TimeBlock | null>(null);
   const google = useGoogleCalendar();
-  const release = useReleaseStatus();
+  const canSync = Boolean(store.sync && !release.offline);
   const [projectId,setProjectId] = useState<string | null>(null), [ideaId,setIdeaId] = useState<string | null>(null);
   const [toast,setToast] = useState(''), [confirmClear,setConfirmClear] = useState(false), [restore,setRestore] = useState<Planner | null>(null);
   const [filter, setFilter] = useState<'open' | 'done' | 'all'>('open');
   const [calendarDate, setCalendarDate] = useState(localDate());
   const [inboxView, setInboxView] = useState<'inbox' | 'someday' | 'stalled'>('inbox');
-  useEffect(()=>{ let active = true; loadPlanner().then(value=>{if(active) setData(value);}).catch(error=>{if(active) setLoadError(String(error));}); const timer = setInterval(()=>setToday(localDate()),30000); return ()=>{active=false;clearInterval(timer);}; },[]);
+  useEffect(() => {
+    let active = true;
+    store.load().then(value => { if (active) setData(value); }).catch(error => { if (active) setLoadError(String(error)); });
+    const timer = setInterval(() => setToday(localDate()), 30000);
+    return () => { active = false; clearInterval(timer); };
+  }, [store]);
   useEffect(() => {
     if (!data) return;
     let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setStorage('Saving…');
-    savePlanner(data).then(() => {
-      if (active) { setStorage('Saved on this device'); setSaveError(''); }
+    store.save(data).then(pending => {
+      if (!active) return;
+      setSaveError('');
+      const saved = store.sync ? 'Saved to your account' : 'Saved on this device';
+      setStorage(pending ? 'Saved on this device · waiting to sync' : saved);
+      if (!pending) { setSyncError(''); setSyncConflict(false); }
+      if (pending && canSync && store.sync) {
+        const sync = store.sync;
+        timer = setTimeout(() => {
+          sync().then(() => {
+            if (!active) return;
+            setStorage(saved);
+            setSyncError('');
+            setSyncConflict(false);
+          }).catch(error => {
+            if (!active) return;
+            setSyncError(error instanceof Error ? error.message : 'Could not sync your account.');
+            setSyncConflict(error instanceof CloudWorkspaceConflictError);
+          });
+        }, 700);
+      }
     }).catch((error: unknown) => {
       if (!active) return;
       setStorage('Unsaved changes');
       setSaveError(error instanceof Error ? error.message : 'The browser could not save your changes. Export a backup before closing.');
     });
-    return () => { active = false; };
-  }, [data]);
+    return () => { active = false; clearTimeout(timer); };
+  }, [data, store, canSync, syncRetry]);
   useEffect(()=>{ if(!toast) return; const timer=setTimeout(()=>setToast(''),4500);return ()=>clearTimeout(timer); },[toast]);
   function change(recipe: (current: Planner) => Planner, entityId?: string, action?: string,
     metadata?: Partial<Omit<Activity, 'id' | 'entityId' | 'action' | 'at'>>) {
@@ -198,7 +231,28 @@ function App() {
       setRestore(validateBackup(JSON.parse(await file.text())));
     } catch (error) { setToast(error instanceof Error ? error.message : 'Could not read this backup.'); }
   }
-  if(loadError)return <div className="loading"><Icon name="leaf" size={36}/><h1>Your saved workspace could not be opened.</h1><p>We haven’t replaced any data. Try closing other Daylight tabs, then reload.</p><pre>{loadError}</pre><button className="primary" onClick={()=>location.reload()}>Try again</button></div>;
+  async function useCloudCopy() {
+    if (!store.useCloudCopy || !confirm('Replace the edits on this device with the latest cloud copy? Export a backup first if you need those edits.')) return;
+    try {
+      const planner = await store.useCloudCopy();
+      setData(planner);
+      setTaskEdit(null);
+      setProjectEdit(null);
+      setBlockEdit(null);
+      go('today');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Could not load the cloud copy.');
+    }
+  }
+
+  if (loadError) return <div className="loading">
+    <Icon name="leaf" size={36} />
+    <h1>Your saved workspace could not be opened.</h1>
+    <p className="workspace-error">{loadError}</p>
+    <button className="primary" onClick={() => location.reload()}>Try again</button>
+    {account.signedIn && <button className="secondary" onClick={account.signOut} disabled={account.busy}>Sign out</button>}
+    {account.error && <p role="alert">{account.error}</p>}
+  </div>;
   if(!data)return <div className="loading"><Icon name="sun" size={40}/><h1>A little clarity is on its way.</h1><p>Opening your planner…</p></div>;
   const project = data.projects.find(p=>p.id===projectId);
   const selectedIdea = data.ideas.find(i=>i.id===ideaId) ?? data.ideas[0];
@@ -242,10 +296,17 @@ function App() {
       <main id="main-content"><div className="page-heading"><div><div className="eyebrow">{view==='today'?prettyDate(today,{weekday:'long',day:'numeric',month:'long'}):query?'YOUR WORKSPACE':view==='settings'?'YOUR SPACE, YOUR WAY':`YOUR ${view==='ideas'?'THINKING SPACE':view.toUpperCase()}`}</div><h1>{query?'Find a little clarity.':heading}</h1><p>{query?`Results for “${query}”`:view==='today'?'A fresh page. A few clear priorities. You’ve got this.':view==='inbox'?'Get it out of your head. Decide where it belongs when you’re ready.':view==='projects'?(project?.outcome??'Keep the bigger picture close, and the next step clear.'):view==='ideas'?'Capture the messy beginning. Find a direction when you’re ready.':view==='calendar'?'Give your plans a day, and your day some breathing room.':view==='reviews'?'Decide what to carry forward and export a record of your progress.':'Manage backups, daily capacity, and device storage.'}</p></div>{!query&&view!=='reviews'&&view!=='settings'&&<button className="primary heading-action" onClick={()=>view==='projects'&&!project?addProject():view==='ideas'?addIdea():view==='calendar'?startBlock(calendarDate):newTask()}><Icon name="plus" size={17}/>{view==='projects'&&!project?'New project':view==='ideas'?'New idea':view==='calendar'?'Add time block':'Add task'}</button>}</div>
       {data.isDemo&&<div className="demo-notice"><span><span className="tiny-tag">A STARTING POINT</span> You’re exploring a sample workspace. Make it yours whenever you’re ready.</span><button onClick={()=>setConfirmClear(true)}>Start fresh <Icon name="arrow" size={14}/></button></div>}
       {saveError && <div className="error-banner" role="alert">{saveError}<button onClick={exportBackup}>Export now</button></div>}
+      {syncError && <div className="error-banner" role="alert">
+        <span>{syncError}</span>
+        {syncConflict ? <>
+          <button onClick={exportBackup}>Export local edits</button>
+          <button disabled={!canSync} onClick={() => void useCloudCopy()}>Use cloud copy</button>
+        </> : <button disabled={!canSync} onClick={() => setSyncRetry(count => count + 1)}>Retry sync</button>}
+      </div>}
       {release.offline && <div className="notice" role="status">Offline · Local planning and backups are available.</div>}
       {release.updateReady && <div className="notice" role="status">
         <span>A Daylight update is ready. Save open edits before applying it.</span>
-        <button className="text-button" onClick={release.applyUpdate} disabled={storage !== 'Saved on this device' || Boolean(taskEdit || projectEdit || blockEdit || google.busy)}>Apply update</button>
+        <button className="text-button" onClick={release.applyUpdate} disabled={Boolean(saveError || storage === 'Saving…' || taskEdit || projectEdit || blockEdit || google.busy)}>Apply update</button>
       </div>}
       {query?<div className="search-results"><section className="card"><div className="card-heading"><h2>Tasks <span className="count">{searchTasks.length}</span></h2></div><TaskList tasks={searchTasks} empty="No matching tasks."/></section><section><h2>Projects <span className="count">{searchedProjects.length}</span></h2><div className="project-grid">{searchedProjects.map(p=><ProjectCard p={p} key={p.id}/>)}</div></section><section className="card"><div className="card-heading"><h2>Ideas & notes <span className="count">{searchedIdeas.length}</span></h2></div>{searchedIdeas.map(i=><button className="result-row" key={i.id} onClick={()=>{go('ideas');setIdeaId(i.id);}}><Icon name="bulb"/>{i.title}<Icon name="arrow" size={16}/></button>)}</section></div>:
       view==='today'?<>
@@ -280,7 +341,8 @@ function App() {
         addBlock={startBlock} editBlock={setBlockEdit} restoreBlock={block => setBlockTrash(block, false)} syncBlock={syncBlock} /> :
       view === 'reviews' ? <Reviews planner={data} today={today} onSave={saveReview} onComplete={complete}
         onMove={planTask} onTrash={trashTask} onEdit={setTaskEdit} /> :
-      <Settings planner={data} exportBackup={exportBackup} importBackup={file => void importBackup(file)}
+      <Settings planner={data} account={account} accountActionDisabled={Boolean(saveError || storage === 'Saving…' || google.busy)}
+        exportBackup={exportBackup} importBackup={file => void importBackup(file)}
         clearWorkspace={() => setConfirmClear(true)} restoreTask={restoreTask}
         setCapacity={minutes => { change(current => ({ ...current, capacityMinutes: minutes })); setToast('Daily capacity saved.'); }} />}
       <footer className="page-footer"><span><i className={`status-dot ${saveError?'error':''}`}/>{storage}</span><span>Less noise. More daylight.</span></footer>
@@ -295,7 +357,7 @@ function App() {
       planner={data} google={google} onClose={() => setBlockEdit(null)} onSave={saveBlock}
       onTrash={block => setBlockTrash(block, true)} onSync={syncBlock} />}
     {projectEdit&&<ProjectDialog project={projectEdit} onClose={()=>setProjectEdit(null)} onSave={saveProject}/>}
-    {confirmClear&&<Modal title="A fresh start?" onClose={()=>setConfirmClear(false)}><div className="modal-body"><p>This removes {data.tasks.length} tasks, {data.projects.length} projects, {data.ideas.length} ideas, time blocks, reviews, and all activity history from this device.</p><p>Export a backup first if you want to keep this workspace.</p><div className="modal-actions"><button className="secondary" onClick={exportBackup}>Export first</button><button className="danger" disabled={google.busy} onClick={()=>{setData(emptyPlanner());setConfirmClear(false);setIdeaId(null);setProjectId(null);setView('today');setToast('A fresh page. Make it yours.');}}>Clear and start fresh</button></div></div></Modal>}
+    {confirmClear&&<Modal title="A fresh start?" onClose={()=>setConfirmClear(false)}><div className="modal-body"><p>This removes {data.tasks.length} tasks, {data.projects.length} projects, {data.ideas.length} ideas, time blocks, reviews, and all activity history from {account.signedIn ? 'your synced account workspace' : 'this device'}.</p><p>Export a backup first if you want to keep this workspace.</p><div className="modal-actions"><button className="secondary" onClick={exportBackup}>Export first</button><button className="danger" disabled={google.busy} onClick={()=>{setData(emptyPlanner());setConfirmClear(false);setIdeaId(null);setProjectId(null);setView('today');setToast('A fresh page. Make it yours.');}}>Clear and start fresh</button></div></div></Modal>}
     {restore&&<Modal title="Restore this backup?" onClose={()=>setRestore(null)}><div className="modal-body"><div className="restore-counts"><strong>{restore.tasks.length}<small> tasks</small></strong><strong>{restore.projects.length}<small> projects</small></strong><strong>{restore.ideas.length}<small> ideas</small></strong><strong>{restore.blocks.length}<small> blocks</small></strong><strong>{restore.reviews.length}<small> reviews</small></strong></div><p>This replaces your current workspace, including its activity history. Export your current data before continuing if you need to keep it.</p><div className="modal-actions"><button className="secondary" onClick={exportBackup}>Back up current data</button><button className="primary" disabled={google.busy} onClick={()=>{setData(restore);setRestore(null);setIdeaId(null);setProjectId(null);setView('today');setToast('Workspace restored.');}}>Replace workspace</button></div></div></Modal>}
     {toast&&<div className="toast" role="status">{toast}<button className="icon-button" aria-label="Dismiss message" onClick={()=>setToast('')}><Icon name="close" size={15}/></button></div>}
   </div>;
@@ -304,4 +366,10 @@ function ProjectDialog({project,onSave,onClose}: {project:Project;onSave:(p:Proj
   const [draft,setDraft]=useState(project);
   return <Modal title={project.name?'Give your project direction':'Make room for a new project'} onClose={onClose}><form className="modal-body" onSubmit={e=>{e.preventDefault();if(draft.name.trim())onSave({...draft,name:draft.name.trim()});}}><label className="field">Project name<input required autoFocus value={draft.name} maxLength={100} placeholder="What are you working toward?" onChange={e=>setDraft({...draft,name:e.target.value})}/></label><label className="field">What does done look like?<textarea rows={4} value={draft.outcome} placeholder="A clear outcome makes the next step easier." onChange={e=>setDraft({...draft,outcome:e.target.value})}/></label><div className="form-columns"><label className="field">Color<select value={draft.color} onChange={e=>setDraft({...draft,color:e.target.value})}><option value="sage">Sage</option><option value="clay">Clay</option><option value="lavender">Lavender</option><option value="blue">Blue</option></select></label><label className="field">Status<select value={draft.status} onChange={e=>setDraft({...draft,status:e.target.value as Project['status']})}><option value="active">Active</option><option value="paused">Paused</option><option value="done">Complete</option></select></label></div><div className="modal-actions"><button className="secondary" type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save project<Icon name="arrow" size={16}/></button></div></form></Modal>;
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <AccountGate>{({ identity, store, account, release }) =>
+      <App key={identity} store={store} account={account} release={release} />
+    }</AccountGate>
+  </React.StrictMode>
+);

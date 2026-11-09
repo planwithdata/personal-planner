@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Planner, Task } from './domain';
+import type { AccountControls } from './AccountGate';
 
-export function Settings({ planner, exportBackup, importBackup, clearWorkspace, restoreTask, setCapacity }: {
+export function Settings({ planner, account, accountActionDisabled, exportBackup, importBackup, clearWorkspace, restoreTask, setCapacity }: {
   planner: Planner; exportBackup: () => void; importBackup: (file: File | undefined) => void;
   clearWorkspace: () => void; restoreTask: (task: Task) => void; setCapacity: (minutes: number) => void;
+  account: AccountControls; accountActionDisabled: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [capacity, setCapacityInput] = useState(String(planner.capacityMinutes));
@@ -54,6 +56,20 @@ export function Settings({ planner, exportBackup, importBackup, clearWorkspace, 
         </section>
       </div>
       <div>
+        <section className="card settings-card account-settings">
+          <h2>Account</h2>
+          {account.signedIn ? <>
+            <p>{account.email ?? 'Signed in with Google'}</p>
+            <p>Edits save to this device first and sync to your account when connected.</p>
+            <button className="secondary" onClick={account.signOut} disabled={account.busy || accountActionDisabled}>Sign out</button>
+          </> : <>
+            <p>This workspace is stored on this device. To move it into an account, export a backup and restore it after signing in.</p>
+            {account.configured ? <button className="secondary" onClick={account.signIn} disabled={account.busy || accountActionDisabled}>
+              Continue with Google
+            </button> : <p>Google sign-in is awaiting site setup.</p>}
+          </>}
+          {account.error && <p className="form-message" role="alert">{account.error}</p>}
+        </section>
         <section className="card settings-card">
           <h2>Daily capacity</h2>
           <p>How many minutes can you usually set aside for planned work? Calendar and Today compare this with your blocks and unallocated estimates.</p>
@@ -80,7 +96,7 @@ export function Settings({ planner, exportBackup, importBackup, clearWorkspace, 
         </section>
         <section className="card settings-card reset-card">
           <h3>Clear workspace</h3>
-          <p>Remove planner data from this device. Export a backup first to keep a copy. Published events can be managed in Google Calendar.</p>
+          <p>Remove planner data from {account.signedIn ? 'this account and its synced workspace' : 'this device'}. Export a backup first to keep a copy. Published events can be managed in Google Calendar.</p>
           <button className="text-button danger-text" onClick={clearWorkspace}>Clear workspace</button>
         </section>
       </div>

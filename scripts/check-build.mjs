@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 
 const index = await readFile('dist/index.html', 'utf8');
-for (const [, path] of index.matchAll(/(?:src|href)="(\.\/[^"]+)"/g)) {
-  assert.ok((await readFile(`dist/${path.slice(2)}`)).length, `Missing asset: ${path}`);
+assert.doesNotMatch(index, /src="\/?src\/.*\.tsx?"/, 'Publish dist, not the source HTML');
+assert.match(index, /src="\/personal-planner\/assets\/[^"]+\.js"/, 'The entry bundle must resolve under the Pages repository path');
+for (const [, path] of index.matchAll(/(?:src|href)="((?:\.\/|\/personal-planner\/)[^"]+)"/g)) {
+  const file = path.replace(/^(?:\.\/|\/personal-planner\/)/, '');
+  assert.ok((await readFile(`dist/${file}`)).length, `Missing asset: ${path}`);
 }
 const manifest = JSON.parse(await readFile('dist/manifest.webmanifest', 'utf8'));
 assert.equal(manifest.start_url, './');

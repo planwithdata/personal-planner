@@ -21,7 +21,7 @@ function revisionOf(value: unknown): string | null {
   return value === undefined ? null : 'legacy';
 }
 
-function database(): Promise<IDBDatabase> {
+export function database(): Promise<IDBDatabase> {
   return dbPromise ??= new Promise((resolve,reject)=>{
     const req = indexedDB.open('daylight-planner',1);
     req.onupgradeneeded = () => req.result.createObjectStore('workspace');
@@ -30,12 +30,15 @@ function database(): Promise<IDBDatabase> {
     req.onblocked = () => reject(new Error('Close other Daylight tabs to open storage.'));
   });
 }
-export async function loadPlanner(): Promise<Planner> {
+export async function readWorkspace(key: string): Promise<unknown> {
   const db = await database();
-  const saved = await new Promise<unknown>((resolve,reject)=>{
-    const req = db.transaction('workspace').objectStore('workspace').get('current');
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('workspace').objectStore('workspace').get(key);
     req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
   });
+}
+export async function loadPlanner(): Promise<Planner> {
+  const saved = await readWorkspace('current');
   revision = revisionOf(saved);
   if (saved === undefined) return seedPlanner();
   const planner = validateBackup(isSnapshot(saved) ? saved.planner : saved);

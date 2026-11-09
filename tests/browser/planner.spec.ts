@@ -4,6 +4,14 @@ import { PLANNER_MARKER } from '../../src/google-calendar';
 
 const appUrl = 'http://127.0.0.1:4174/personal-planner/';
 
+async function openGuest(page: Page, url = './') {
+  await page.goto(url);
+  const guest = page.getByRole('button', { name: 'Use on this device' });
+  const today = page.getByRole('heading', { name: 'Make room for what matters.' });
+  await expect(guest.or(today)).toBeVisible();
+  if (await guest.isVisible()) await guest.click();
+}
+
 function today(page: Page) {
   return page.evaluate(() => new Intl.DateTimeFormat('sv-SE', {
     year: 'numeric', month: '2-digit', day: '2-digit'
@@ -20,7 +28,7 @@ test('mobile task recurrence, review, JSON handoff, and restore', async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('./');
+  await openGuest(page);
   const mobile = page.getByRole('navigation', { name: 'Mobile navigation' });
   await expect(page.getByRole('heading', { name: 'Make room for what matters.' })).toBeVisible();
   await page.getByRole('button', { name: 'Add task', exact: true }).first().click();
@@ -111,11 +119,11 @@ test('legacy device data survives migration, concurrent edits, offline reload, a
     });
   }, date);
 
-  await page.goto(appUrl);
+  await openGuest(page, appUrl);
   await expect(page.getByText('Keep my existing task', { exact: true })).toBeVisible();
   await expect(page.getByText('Saved on this device', { exact: true })).toBeVisible();
   const second = await context.newPage();
-  await second.goto(appUrl);
+  await openGuest(second, appUrl);
   await expect(second.getByText('Keep my existing task', { exact: true })).toBeVisible();
   await createTask(second, 'Saved from the second tab');
   await expect(second.getByText('Saved on this device', { exact: true })).toBeVisible();
@@ -183,7 +191,7 @@ test('calendar lists Google events and can publish, update, and remove a block',
     }
     return json({ error: { message: `Unexpected ${method} ${path}` } }, 500);
   });
-  await page.goto('./');
+  await openGuest(page);
   date = await today(page);
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Calendar' }).click();
   await page.locator('summary').filter({ hasText: 'Google Calendar' }).click();

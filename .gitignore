@@ -1,8 +1,10 @@
 node_modules/
 .npm-cache/
 dist/
+dist-accounts/
 test-results/
 playwright-report/
+.playwright-browsers/
 daylight-backup-*.json
 daylight-analytics-*.json
 daylight-project-handoff-*.json

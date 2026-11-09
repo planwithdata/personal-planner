@@ -9,6 +9,24 @@
   border-radius: 6px;
 }
 .skip-link:focus { top: 16px; }
+.account-screen {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+.account-card {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+  width: min(100%, 420px);
+  padding: 28px;
+}
+.account-card img { border-radius: 14px; }
+.account-card p { color: #56634d; line-height: 1.65; }
+.account-card .primary, .account-card .secondary { width: 100%; min-height: 44px; }
+.account-settings { margin-bottom: 18px; overflow-wrap: anywhere; }
+.workspace-error { max-width: 38rem; overflow-wrap: anywhere; }
 .notice {
   display: flex;
   align-items: center;
